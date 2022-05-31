@@ -1,0 +1,260 @@
+---
+title: "Central Limit Theorem"
+author: "Elizabeth Everman"
+date: "11/24/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Libraries, include = FALSE}
+pacman::p_load(tidyverse, Rmisc)
+```
+
+```{r Functions, include=FALSE}
+
+# Shadenorm function from: https://www.r-bloggers.com/2011/04/how-to-shade-under-a-normal-density-in-r/
+
+shadenorm = function(below=NULL, above=NULL, pcts = c(0.025,0.975), mu=0, sig=1, numpts = 500, color = "gray", dens = 40,
+                    justabove= FALSE, justbelow = FALSE, lines=FALSE,between=NULL,outside=NULL){
+                     
+    if(is.null(between)){
+         below = ifelse(is.null(below), qnorm(pcts[1],mu,sig), below)
+         above = ifelse(is.null(above), qnorm(pcts[2],mu,sig), above)
+    }
+   
+    if(is.null(outside)==FALSE){
+         below = min(outside)
+         above = max(outside)
+    }
+    lowlim = mu - 4*sig
+    uplim  = mu + 4*sig
+           
+    x.grid = seq(lowlim,uplim, length= numpts)
+    dens.all = dnorm(x.grid,mean=mu, sd = sig)
+    if(lines==FALSE){
+          plot(x.grid, dens.all, type="l", xlab="X", ylab="Density")
+    }
+    if(lines==TRUE){
+          lines(x.grid,dens.all)
+    }
+   
+    if(justabove==FALSE){
+        x.below    = x.grid[x.grid<below]
+        dens.below = dens.all[x.grid<below]
+        polygon(c(x.below,rev(x.below)),c(rep(0,length(x.below)),rev(dens.below)),col=color,density=dens)
+    }
+    if(justbelow==FALSE){
+        x.above    = x.grid[x.grid>above]
+        dens.above = dens.all[x.grid>above]
+        polygon(c(x.above,rev(x.above)),c(rep(0,length(x.above)),rev(dens.above)),col=color,density=dens)
+    }
+   
+    if(is.null(between)==FALSE){
+         from = min(between)
+         to   = max(between)
+         
+         x.between    = x.grid[x.grid>from&x.grid<to]
+         dens.between = dens.all[x.grid>from&x.grid<to]
+         polygon(c(x.between,rev(x.between)),c(rep(0,length(x.between)),rev(dens.between)),col=color,density=dens)
+    }
+   
+}
+
+
+# Function for sampling from a card deck. Specify the variable as deck$VARIABLE. Custom function.
+
+SamplingFunction <- function(VARIABLE, SAMPLESIZE, DRAWS){
+  INDEX_LIST = list()
+  
+  for(draw in 1:DRAWS){
+    SampleMean <- mean(sample(VARIABLE, SAMPLESIZE, replace = TRUE))
+    SampleMean <- data.frame(Mean = SampleMean)
+    INDEX_LIST[[draw]] <- SampleMean
+  }
+  OUTPUT_FILE <- as.data.frame(do.call(rbind, INDEX_LIST))
+}
+```
+
+## Sampling Distributions:
+
+A biological population is a group of individuals that live or occur in a given place at a given time. A statistical population is one that includes all individuals of a particular type. For example, a herd of bison is a biological population, while all of the bison that are alive would be a statistical population. Statistics is a set of tools that uses samples from statistical populations to make estimates about the statistical population. Estimates (often the mean of a trait) are necessary because it is not possible to measure every bison that is alive the same way it is impossible to measure every cell in a tissue. Estimates can be good or bad, and this depends on the quality of the sample.
+
+Good quality samples are those that are random, representative (unbiased), and independent. Estimation is improved with low measurement error (high accuracy, precision, and repeatability, low bias) and with larger sample sizes. It is often necessary to determine the optimal sample size. Larger samples can be time consuming and expensive to collect, and it is possible to reach a point of diminishing return by increasing samples to very large numbers. An additional risk of overdoing it with sample size is artificially inflating statistical power--meaning you will find statistical differences supported by low p values even when the difference you detect is not biologically meaningful.
+
+The appropriate sample size depends on the properties of the statistical population, specifically the shape of the distribution of observations in the population. Observations from the statistical population that are normally distributed require fewer samples to approximate the true value of an estimate. Statistical populations with non-normally distributed observations typically require larger sample sizes to generate better (more accurate) estimates. 
+
+### The Normal Distribution:
+The Normal Distribution its properties that lead to the Empirical Rule and the Central Limit Theorem are the closest thing to magic you will encounter in science. (or so I've been told by some pretty smart people). The normal distribution is characterized by:
+
+1. Continuous distribution, meaning probability is measure by the area under the curve rather than height of the curve
+2. Symmetric around the mean
+3. Single mode
+4. Probability density is highest exactly at the mean
+5. Mean, median, and mode are all equal to each other
+6. About 2/3 of observations fall within 1 standard deviation (sd) of the mean; 95% fall within ~2sd of the mean
+
+It is specifically this last point that provides the framework we use to conduct statistical tests to support or reject hypotheses.
+
+```{r The Normal Distribution and Empirical Rule}
+# The normal distribution:
+shadenorm(col = "transparent")
+
+# The probability that a randomly drawn measurement from a normal distribution is within one standard deviation of the mean is 68.3% (in the red shaded area)
+shadenorm(between = c(-1,1), col = "red")
+
+# The probability that a randomly drawn measurement from a normal distribution is within two standard deviations of the mean is 95% (in the blue shaded area)
+shadenorm(between = c(-2,2), col = "blue")
+
+# The probably that a randomly drawn measurement from a normal distribution is outside two SD is 5% split on either side of the distribution:
+shadenorm(col = "green")
+
+```
+
+This last plot shows the upper and lower 2.5% (totaling 5%) of the distribution. This final region of the distribution is tied to the determination of statistical significance. **Why is a p value of < 0.05 significant?** Hypothesis testing is balanced between two probabilities: 
+
+1. The probability of rejecting the null hypothesis (no differences) when the null hypothesis is actually true
+2. The probability of **failing to** reject the null hypothesis when the null hypothesis is actually false.
+
+The first situation is called Type I error rate and is denoted as alpha. The second situation is called Type II error rate and is denoted as beta. Alpha is typically set at 5%, meaning we accept a 5% chance that our conclusion to reject the null hypothesis is incorrect. The p value is then the observed probability that the null hypothesis is actually true. If p = 0.01, there is a 1% probability that the null hypothesis is actually correct.
+
+Alpha and beta are inversely related. If alpha = 0.05, beta = 0.95. The more concerned you are about falsely rejecting the null hypothesis, the more likely you are to accept the null hypothesis when it is actually false. In practice this would occur by decreasing alpha to 0.01 (meaning a p value needs to be < 0.01 to be considered significant), which would make beta increase to 0.99. While this makes it harder to find statistical differences, when the determination involves a new treatment that may have a life-threatening side effect (for example), one may find themselves morally obligated to "be extra sure" of their results before making recommendations for its use in clinical trials or beyond...
+
+### Empirical Rule and Central Limit Theorem:
+
+The CLT states that "the mean of a large number of measurements randomly sampled from a non-normal population is approximately normally distributed" (Whitlock and Schluter, 2009). The approximation of the normal distribution improves with increased sample size.
+
+```{r Spanish Flu: Starting Distribution}
+# Data from https://whitlockschluter3e.zoology.ubc.ca/RExamples/Rcode_Chapter_10.html
+
+# These data report age of death in Switzerland in 1918 during the Spanish flu epidemic
+flu <- read.csv(url("https://whitlockschluter3e.zoology.ubc.ca/Data/chapter10/chap10e6AgesAtDeathSpanishFlu1918.csv"), stringsAsFactors = FALSE)
+head(flu)
+summary(flu)
+
+# Use a histogram to visualize the frequency distribution of age at death:
+ggplot(flu, aes(x = age)) + 
+  geom_histogram(aes(y = ..density..), fill = "grey", col = "black", binwidth = 2, 
+        boundary = 0, closed = "left") + 
+  geom_density(color = "blue") +
+  stat_function(fun = dnorm, args = list(mean = mean(flu$age), sd = sd(flu$age)), color = "red") +
+    labs(x = "Age at death (yrs)", y = "Density") + 
+    theme_classic() +
+  xlim(0,100)
+
+
+```
+
+This distribution is highly non-normal. The blue line shows the actual density distribution of the data, which is multimodal, and the red line shows the theoretical normal distribution based on the mean and standard deviation of the flu data.
+
+If the CLT is true, we should be able to demonstrate it by taking repeated random estimates from the raw data, calculating the mean of those estimates, and plotting the distribution. The following demonstration illustrates this principle with a sample size of 2, 4, 10, and 30.
+
+```{r Demonstrate the Central Limit Theorem, sample size is 2}
+# STEP 1: Set the sample size:
+n <- 2
+
+# STEP 2: Take 10000 random samples from the population of each with 2 observations and calculate the mean:
+
+results <- vector()   # Make an empty vector to store the data in the following FOR LOOP
+for(i in 1:10000){
+    AgeSample <- sample(flu$age, size = n, replace = FALSE)
+    results[i] <- mean(AgeSample)
+    }
+
+# STEP 3: Plot the histogram of sample means:
+ggplot(data.frame(results), aes(x = results)) + 
+  geom_histogram(aes(y = ..density..), fill = "grey", col = "black", binwidth = 2, 
+        boundary = 0, closed = "left") + 
+  geom_density(color = "blue") +
+  stat_function(fun = dnorm, args = list(mean = mean(results), sd = sd(results)), color = "red") +
+    labs(x = "Age at death (yrs)", y = "Density") + 
+    theme_classic() +
+  xlim(0,100)
+
+```
+
+
+The distribution of sample means changes dramatically toward a normal distribution with a sample size of 2. The distribution of means is still a little bumpy, so there is room to improve by increasing sample size.
+
+
+```{r Demonstrate the Central Limit Theorem, sample size is 4}
+# STEP 1: Set the sample size:
+n <- 4
+
+# STEP 2: Take 10000 random samples from the population of each with 4 observations and calculate the mean:
+
+results <- vector()   # Make an empty vector to store the data in the following FOR LOOP
+for(i in 1:10000){
+    AgeSample <- sample(flu$age, size = n, replace = FALSE)
+    results[i] <- mean(AgeSample)
+    }
+
+# STEP 3: Plot the histogram of sample means:
+ggplot(data.frame(results), aes(x = results)) + 
+  geom_histogram(aes(y = ..density..), fill = "grey", col = "black", binwidth = 2, 
+        boundary = 0, closed = "left") + 
+  geom_density(color = "blue") +
+  stat_function(fun = dnorm, args = list(mean = mean(results), sd = sd(results)), color = "red") +
+    labs(x = "Age at death (yrs)", y = "Density") + 
+    theme_classic() +
+  xlim(0,100)
+
+```
+
+
+Increasing sample size to 4 approximates a normal distribution. However, the spread of the data is still quite large. You will see in future exercises that both the mean and variance are the basis of hypothesis testing, and increasing sample size improves variance as well.
+
+```{r Demonstrate the Central Limit Theorem, sample size is 10}
+# STEP 1: Set the sample size:
+n <- 10
+
+# STEP 2: Take 10000 random samples from the population of each with 10 observations and calculate the mean:
+
+results <- vector()   # Make an empty vector to store the data in the following FOR LOOP
+for(i in 1:10000){
+    AgeSample <- sample(flu$age, size = n, replace = FALSE)
+    results[i] <- mean(AgeSample)
+    }
+
+# STEP 3: Plot the histogram of sample means:
+ggplot(data.frame(results), aes(x = results)) + 
+  geom_histogram(aes(y = ..density..), fill = "grey", col = "black", binwidth = 2, 
+        boundary = 0, closed = "left") + 
+  geom_density(color = "blue") +
+  stat_function(fun = dnorm, args = list(mean = mean(results), sd = sd(results)), color = "red") +
+    labs(x = "Age at death (yrs)", y = "Density") + 
+    theme_classic() +
+  xlim(0,100)
+
+```
+
+With larger sample sizes, the normal distribution continues to improve but so does the spread of the data, meaning it becomes easier to get a more accurate estimate of the true population mean with larger sample sizes as well. It also means it will be easier to find statistical differences between multiple treatments. For example, you could test for differences in age at death between Switzerland and another country and your ability to detect difference would improve with a larger vs smaller sample size. You can trust your intuition somewhat here as well. If you wanted to know the average age at death, would you more reasonably determine that estimate after measuring 3 people, 30 people, or 3000 people?
+
+```{r Demonstrate the Central Limit Theorem, sample size is 30}
+# STEP 1: Set the sample size:
+n <- 30
+
+# STEP 2: Take 1000 random samples from the population of each with 30 observations and calculate the mean:
+
+results <- vector()   # Make an empty vector to store the data in the following FOR LOOP
+for(i in 1:10000){
+    AgeSample <- sample(flu$age, size = n, replace = FALSE)
+    results[i] <- mean(AgeSample)
+    }
+
+# STEP 3: Plot the histogram of sample means:
+ggplot(data.frame(results), aes(x = results)) + 
+  geom_histogram(aes(y = ..density..), fill = "grey", col = "black", binwidth = 2, 
+        boundary = 0, closed = "left") + 
+  geom_density(color = "blue") +
+  stat_function(fun = dnorm, args = list(mean = mean(results), sd = sd(results)), color = "red") +
+    labs(x = "Age at death (yrs)", y = "Density") + 
+    theme_classic() +
+  xlim(0,100)
+
+```
+
+
+After increasing the number of samples to 30, the distribution doesn't improve much. Thus the saying that 30 is closer to infinity than 0 in statistics. This is often a point at which further increases in sample size can lead to artificially inflated power for hypothesis testing and may lead you to finding statistical results that aren't meaningful. However, the question and statistical population are important to keep in mind here. If the response variable (the thing you measure) is extremely variable ranging from 0 - 100 as in this example), it would absolutely be reasonable to take a much larger sample than 30 to better describe the statistical population if that was your goal. If your goal was simply to compare age at death between two countries, one could argue that a **random, representative, unbiased, and independent** sample size of 30 from each of the countries compared would be sufficient to do so.

@@ -1,0 +1,284 @@
+---
+title: "Basic Statistical Tests"
+author: "Elizabeth Everman"
+date: "12/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Libraries, include = FALSE}
+pacman::p_load(tidyverse, Rmisc, car, chisq.posthoc.test)
+```
+
+## Hypthesis testing
+It's possible to gain a lot of insight looking at descriptive statistics such as the central tendency and spread of the raw data, and this initial step is important for determining whether your raw or transformed data meet the assumptions of the most common tests. These common tests are "parametric" tests and require that the following assumptions are met or approximately met (especially if sample size is large).
+
+1. Data are normally distributed (or sample size is large enough to invoke the central limit theorem)
+2. Variances are approximately equal
+3. Data are independent
+4. No extreme outliers
+
+The appropriate test depends on the question and the design of the experiment. This is why it is so important to consider the statistical analyses when you design the experiment, not after you've carried out the work. It's important to ensure your sample size is large enough to accurately and precisely estimate the mean. If variance is extremely large (due to low sample size) the probability of detecting true treatment effects will suffer. Pollard et al 2019 provides a decision tree for deciding on the appropriate tests, and this is a good place to start. The following provides code and example analyses for common experimental designs.
+
+
+### Student's T Test:
+
+```{r T test}
+# Data from Pollard et al 2019.
+# There are 2 genotypes (categorical explanatory variable) and a continuous response variable (Measurement)
+data2 <- read.csv("dataset2.csv", header = TRUE)
+head(data2)
+
+# make genotype column a categorical variable which are called factors in R
+data2$Genotype <- as.factor(data2$Genotype) 
+# check that data structure is correct
+str(data2)
+# look at summary information summary(data2)
+summary(data2)
+
+
+# In 2_DescriptiveStatistics.Rmd, we determined that this dataset DOES NOT conform to the normality assumption
+# Data Transformations to satisfy normality assumptions:
+data2$lnTransform <- log(data2$Measurement)
+
+# Plot distributions of transformed data:
+ggplot(data2, aes(lnTransform, color = Genotype, fill = Genotype)) +
+  geom_histogram(aes(y = ..density..), position = position_dodge()) +
+  geom_density(alpha = 0.3) +
+  theme_classic() +
+  theme(legend.position = c(0.9,0.9))
+
+# Test for normality of transformed data with a Shapiro Wilks Test:
+shapiro.test(subset(data2, Genotype == "Mutant")$lnTransform)  # normality is improved
+shapiro.test(subset(data2, Genotype == "WT")$lnTransform)      # normally distributed
+
+# Test for homoscedasticity (homogeneity of variance):
+leveneTest(lnTransform ~ Genotype, data = data2)
+
+# Inference can be gained from calculating 95% confidence intervals, but this is not the same as running a statistical test.
+# Calculate confidence intervals:
+SummaryTable <- summarySE(data = data2, measurevar = "lnTransform", groupvars = "Genotype")
+SummaryTable
+
+# Plot the confidence intervals:
+ggplot(SummaryTable, aes(Genotype, lnTransform, color = Genotype)) +
+  geom_errorbar(aes(ymin = lnTransform - ci, ymax = lnTransform + ci), width = 0.2) +
+  geom_point() +
+  theme_classic() +
+  theme(legend.position = c(0.9,0.9))
+
+
+# T test:
+t.test(lnTransform ~ Genotype, data = data2)
+
+```
+
+
+In the plot above, the confidence intervals indicate the span of values that have a 95% chance of including the TRUE mean of the population (which we cannot know). Because the two treatment confidence intervals don't overlap, we can conclude that the samples are different (the treatment has an effect on the measurement). Without the statistical test, we don't know the probability associated with this conclusion. The t test provides a p value based on the normal distribution, an alpha level of 0.05, and the degrees of freedom. Because our alpha level is 0.05 and the genotype treatment could increase or decrease the measurement response variable, we divide alpha / 2 to perform a two-tailed t test. Our experiment-wide alpha levels is still 5%, meaning that there is a 5% chance that we will incorrectly determine that the treatment influences the response variable. The p value from the t test provides the observed probability that our determination is incorrect. In this case, there is a 0.000000000000022% chance that our determination that the treatment influences the measurement is incorrect. In other words, we can assert a high level of confidence that the WT and Mutant strains have distinct trait values.
+
+### Linear Regression:
+
+```{r Linear Regression}
+# Data are from Brooks 2000 and included in Applied Biological Statistics 2009
+# There is one continuous explanatory variable and one continuous response variable
+# The question is: Does ornamentation of father guppies influence the attractiveness of their sons.
+# There are two aspects we need to know about: are the two variables correlated, and how strong is the association.
+guppyData <- read.csv("chap02e3bGuppyFatherSonAttractiveness.csv", stringsAsFactors = TRUE)
+head(guppyData)
+
+# Generate a scatterplot of the data
+ggplot(guppyData, aes(x=fatherOrnamentation, y=sonAttractiveness)) +
+  geom_point() +
+  theme_classic() +
+  xlab("Father's ornamentation") +
+  ylab("Son's attractiveness") 
+
+# There is clearly a positive trend between the explanatory variable and the response, and this becomes even more clear with a best fit line fit to the data.
+ggplot(guppyData, aes(x=fatherOrnamentation, y=sonAttractiveness)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = 2) +
+  theme_classic() +
+  xlab("Father's ornamentation") +
+  ylab("Son's attractiveness") +
+  geom_smooth(method = lm, se = FALSE)
+```
+
+The blue line in the above plot is the best fit line. This line can be considered a running mean that estimates the value of the response (son's attractiveness) given any value of the explanatory variable (father's ornamentation), observed in the dataset or not. As a result of this statistical behavior, all of the possible means that occur along the regression line and the slope of the line itself are analogous to the resampling exercise we used to demonstrate the central limit theorem. If you were to resample this dataset and calculate the slope of the best fit line for each of 1000 iterations, the distribution of those slopes would be **normal**. In this way, the truths derived from the central limit theorem regarding sample size and normality also apply to linear regression. (The dotted line is present simply to illustrate that the slope of the best fit line is certainly positive...but is it significantly positive...?)
+
+```{r Linear Regression Continued}
+# Check normality and variance:
+shapiro.test(guppyData$fatherOrnamentation) # W = 0.94899, p-value = 0.09717
+shapiro.test(guppyData$sonAttractiveness) # W = 0.97364, p-value = 0.5329
+
+# Checking homogeneity of variance is different for continuous variables.
+# We can do this with using the residuals (the distance of each data point from the best fit line) and this is demonstrated below. For now, we can simply compare the calculated variance.
+var(guppyData$fatherOrnamentation) # 0.06288786
+var(guppyData$sonAttractiveness) # 0.1609006  roughly 2x higher variance, likely not a problem.
+
+
+# Calculate correlation:
+cor(guppyData$fatherOrnamentation, guppyData$sonAttractiveness)
+
+# Calculate coefficient of determination (how much variation in response is explained by the independent variable)
+cor(guppyData$fatherOrnamentation, guppyData$sonAttractiveness)^2
+
+# Test the correlation to determine if the correlation coefficient is different from 0:
+cor.test(guppyData$fatherOrnamentation, guppyData$sonAttractiveness)
+# We can conclude that the variables are significantly positively correlated.
+
+
+# Linear regression: To determine if the slope of the relationship is different from 0 (the null hypothesis)
+guppyRegression <- lm(sonAttractiveness ~ fatherOrnamentation, data = guppyData)
+
+# Raw format of the model
+guppyRegression 
+
+# To generate a table with the model statistics:
+summary(guppyRegression)
+
+ggplot(guppyData, aes(x=fatherOrnamentation, y=sonAttractiveness)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = 2) +
+  theme_classic() +
+  xlab("Father's ornamentation") +
+  ylab("Son's attractiveness") +    
+  geom_smooth(method = lm)
+
+```
+
+In the plot above, you see the scatterplot of the raw data, a best fit line in blue and a horizontal dotted line. There is also a shaded region around the best fit line. The shaded area is the 95% confidence interval of the regression and can be used similarly to how it was used in the t test dataset. The parts to pay attention to are the ends of the regression line. The edges of the shaded areas on the low side of the regression line exclude the shaded areas of the high side of the regression line. There is a 95% chance that the true association between father ornamentation and son attractiveness is found within that shaded area. So, the narrower the shaded area, the more precise our estimation. The dotted line drives home the point that the slope of the regression line is different from a slope of 0. These variables are correlated; however, correlation does not mean causation. In order to infer causation, you would need to do a series of followup experiments to directly test the mechanism leading to the association between father and son characteristics. 
+
+
+```{r Using residuals to test variance assumption for linear regression}
+# Residuals are another way to check deviation from assumptions:
+
+guppyData$residuals <- residuals(guppyRegression)
+
+ggplot(guppyData, aes(fatherOrnamentation, residuals)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = 2) +
+  theme_classic()
+
+```
+
+
+The plot above demonstrates how to use residuals to determine whether data comply with the assumption of homoscedasticity (equal variance). This process works by calculating the distance of each datapoint from the regression line using the actual data (two plots above). The points above the regression line have positive values; the points below the line have negative values. If variance is approximately equal, there should be an equal number and spread of residuals for points above and below 0 in above plot following plot
+
+### Analysis of Variance (ANOVA) and Multiple Test Corrections
+
+```{r ANOVA and Multiple Testing}
+# Data from Pollard et al. 2019
+# There is a treatment variable with 4 categorical groups and a continuous response variable.
+# The questions are: Are there differences between treatments and which treatments are different?
+
+# Load data and determine how many treatment categories there are:
+data5 <- read.csv("dataset5.csv", header = TRUE)
+data5$Treatment <- as.factor(data5$Treatment)
+head(data5)
+levels(data5$Treatment)
+
+# Plot the raw data:
+ggplot(data5, aes(Treatment, Intensity, color = Treatment, fill = Treatment)) +
+  geom_jitter() +
+  geom_boxplot(alpha = 0.3) +
+  theme_classic()
+```
+
+Above, you see the raw data and a boxplot highlighting the mean and quantiles of the data. In  previous examples, we used a t test to compare one treatment group to the control. It is common for people new to statistics to take an approach with a dataset such as this one to break the four treatments into a series of comparisons. For example, each RNAi strain response compared to the control response. This has an important consequence for calculating the probability that we are incorrectly rejecting the null hypothesis (finding differences that aren't there in the statistical population). This practice is called multiple testing and inflates the alpha level in a predictable way, demonstrated below. If you use three t tests to determine if each RNAi line is different from the control, alpha inflates from 5% to ~14%, meaning that there is a 14% chance that any significant results you find are not correct. The problem gets even worse if you wanted to compare all of the groups--every strain against every other strain. This requires 6 tests and would inflate alpha to ~26.5%.
+
+```{r ANOVA continued}
+
+# Inflation of type i error rate = 1-(1-alpha)^number of tests
+# For three independent tests:
+1 - (1 - 0.05)^3 # 14%
+
+# For six independent tests:
+1 - (1 - 0.05)^6 # 14%
+
+
+# The CORRECT way to handle these data:
+rnai.aov <- aov(Intensity ~ Treatment, data = data5)
+summary(rnai.aov) # Treatment (strain) influences intensity
+
+# Which strain(s) influences intensity?
+TukeyHSD(rnai.aov, "Treatment")
+
+# Summary plot:
+rnai.summary <- summarySE(data5, measurevar = "Intensity", groupvars = "Treatment")
+
+ggplot(rnai.summary, aes(Treatment, Intensity, color = Treatment)) +
+  geom_errorbar(aes(ymin = Intensity - ci, ymax = Intensity + ci), width = 0.2) +
+  geom_point() +
+  theme_classic()
+```
+
+
+The figure above shows the 95% confidence interval plot. The ANOVA table tells us that the overall experiment resulted in a significant difference between at least two of the treatments. The ANOVA doesn't tell us which of the treatments are different from each other. People often fall into the trap of running individual t tests between each of the variables. This is critical mistake because it inflates the Type II error rate (alpha) from 5%. This means that your probability of incorrectly rejecting the null hypothesis is much higher. Instead use post hoc comparisons such as Tukey's Honest Significant Difference (Tukey HSD) test. This method adjusts the alpha level so that your experiment-wide alpha level remains at 5%.
+
+### Chi-square Contingency Test:
+
+```{r Chi Square test}
+# The chi square distribution is different from the normal distribution, however, it approaches a normal distribution when sample size is large enough
+# Involves counts of categorical data
+
+x2sq.dist <- data.frame(DF = as.factor(c(rep(1, 10000),
+                               rep(5, 10000),
+                               rep(10, 10000))),
+                        Value = c(rchisq(10000, 1),
+                                  rchisq(10000, 5),
+                                  rchisq(10000, 10)))
+
+ggplot(x2sq.dist, aes(Value, color = DF, fill = DF)) +
+  geom_histogram(alpha = 0.3) +
+  theme_classic()
+
+```
+
+The above plot is the theoretical chi square distribution. This is a right-skewed distribution (tail to the right of the distribution). The larger sample size you have (DF), the more similar to normal the distribution becomes. Once again, this allows higher statistical power to detect differences between groups.
+
+```{r Chi square continued}
+
+# Data are from Pollard et al. 2019
+# We have three categorical explanatory variables and two possible categorical responses.
+
+data4 <- read.csv("dataset4.csv", header = TRUE)
+unique(data4$Treatment) # The non-control treatments decrease expression of the gene Sox2 in different ways
+unique(data4$Phenotype) # The outcomes refer to the levels of Sox2 gene expression relative to the WT (Control-MO) strain.
+
+head(data4) 
+# There are no numbers in this raw data, and we need numbers in order to perform the calculations that are necessary for any statistical analysis. Therefore, we tally up the number of observations in each treatment category that have Decreased or WT gene expression.
+
+
+# Convert categorical observations to count data for each category:
+(data4.table <- table(data4))
+
+# run chi-square test (correct = FALSE because this is not a 2x2 table)
+data4chitest <- chisq.test(data4.table, correct = FALSE)
+
+# Expected counts:
+data4chitest$expected
+
+# Test result:
+data4chitest
+
+# mosaic plot to show results:
+mosaicplot(data4.table, color = c("salmon","blue"), main = "Effect of Treatment Strain on Sox2 Expression")
+
+
+# Fisher's exact test accomplishes a similar analysis but has no assumptions on minimum expected values
+
+data4fisher <- fisher.test(data4.table)
+
+```
+
+The plot above is a mosaic plot and allows the proportion of the total observations in each response to be compared across the treatment groups. The chi square test generated a significant result, which we can interpret in the same way as other significant tests--the treatment groups are different. However, like with the ANOVA, this result applies to the total experiment, and we don't have information telling us which treatment groups are different from each other. We can use a post hoc test to make this determination as outlined below.
+
+```{r Chi square post hoc test}
+chisq.posthoc.test(data4.table)
+
+```
+
+The output above provides bonferroni-adjusted p values (maintaining an experiment-wide alpha level of 5%) corresponding to the differences between the response categories WT vs Decreased in each treatment category. For the Control-MO group, WT expression is significantly more common than Decreased Sox2 expression. For the JmjD2A-sbMO+pCI-JmjD2A group, WT Sox2 expression is as common as Decreased Sox2 expression (we fail to reject the hypothesis that expression is decreased due to the JmjD2A-sbMO+pCI-JmjD2A treatment). For the JmjD2A-sbMO+tbMO group, Decreased Sox2 expression is observed significantly more often than WT Sox2 expression.

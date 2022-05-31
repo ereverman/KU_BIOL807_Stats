@@ -1,0 +1,231 @@
+---
+title: "Summary Statistics"
+author: "Elizabeth Everman"
+date: "11/24/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Libraries, include = FALSE}
+pacman::p_load(tidyverse, Rmisc, car)
+```
+
+
+```{r Functions, include = FALSE}
+# Shadenorm function from: https://www.r-bloggers.com/2011/04/how-to-shade-under-a-normal-density-in-r/
+
+shadenorm = function(below=NULL, above=NULL, pcts = c(0.025,0.975), mu=0, sig=1, numpts = 500, color = "gray", dens = 40,
+                    justabove= FALSE, justbelow = FALSE, lines=FALSE,between=NULL,outside=NULL){
+                     
+    if(is.null(between)){
+         below = ifelse(is.null(below), qnorm(pcts[1],mu,sig), below)
+         above = ifelse(is.null(above), qnorm(pcts[2],mu,sig), above)
+    }
+   
+    if(is.null(outside)==FALSE){
+         below = min(outside)
+         above = max(outside)
+    }
+    lowlim = mu - 4*sig
+    uplim  = mu + 4*sig
+           
+    x.grid = seq(lowlim,uplim, length= numpts)
+    dens.all = dnorm(x.grid,mean=mu, sd = sig)
+    if(lines==FALSE){
+          plot(x.grid, dens.all, type="l", xlab="X", ylab="Density")
+    }
+    if(lines==TRUE){
+          lines(x.grid,dens.all)
+    }
+   
+    if(justabove==FALSE){
+        x.below    = x.grid[x.grid<below]
+        dens.below = dens.all[x.grid<below]
+        polygon(c(x.below,rev(x.below)),c(rep(0,length(x.below)),rev(dens.below)),col=color,density=dens)
+    }
+    if(justbelow==FALSE){
+        x.above    = x.grid[x.grid>above]
+        dens.above = dens.all[x.grid>above]
+        polygon(c(x.above,rev(x.above)),c(rep(0,length(x.above)),rev(dens.above)),col=color,density=dens)
+    }
+   
+    if(is.null(between)==FALSE){
+         from = min(between)
+         to   = max(between)
+         
+         x.between    = x.grid[x.grid>from&x.grid<to]
+         dens.between = dens.all[x.grid>from&x.grid<to]
+         polygon(c(x.between,rev(x.between)),c(rep(0,length(x.between)),rev(dens.between)),col=color,density=dens)
+    }
+   
+}
+
+```
+
+## Summary Statistics
+When we begin an experiment, we typically have a question in mind that we aim to test. Even in an observational experiment, there are usually trends we are interested in summarizing, discussing, and drawing conclusions from. These summary descriptions require some sort of statistical description of raw data. We are often interested in estimating the true mean value of a response for our infinite statistical population of interest, and so a good place to start is by estimating the mean. However, we have shown that variation in the observed sample data has a very literal impact on our ability to perform this estimation accurately, precisely, repeatably, and in an unbiased manner. Therefore, and more importantly, we need to describe the variation associated with our data. Descriptive statistics focus on estimating the location (mean) and spread (variation) of the raw data.
+
+```{r Location and Spread of Data}
+# Simulate data for demonstration
+
+# Three normally-distributed sets of observations with varying means and distributions
+dat <- data.frame(TRT_A = rnorm(1000, mean = 5, sd = 1),
+                  TRT_B = rnorm(1000, mean = 10, sd = 2),
+                  TRT_C = rnorm(1000, mean = 12, sd = 0.5))
+
+dat.long <- dat %>% pivot_longer(TRT_A:TRT_C, names_to = "Treatment", values_to = "units")
+dat.long$Treatment <- factor(dat.long$Treatment, levels = c("TRT_A","TRT_B","TRT_C"))
+
+ggplot(dat.long, aes(units, color = Treatment, fill = Treatment)) +
+  geom_histogram(alpha = 0.3, position = position_dodge(), binwidth = 0.2) +
+  geom_vline(xintercept = mean(dat$TRT_A), color = "red") +
+  geom_vline(xintercept = mean(dat$TRT_B), color = "black") +
+  geom_vline(xintercept = mean(dat$TRT_C), color = "blue") +
+  scale_fill_manual(values = c("red","black","blue")) +
+  scale_color_manual(values = c("red","black","blue")) +
+  theme_classic()
+
+
+```
+
+The above plot shows three distributions. The mean value is indicated with the vertical line in the matching color of the distribution. Looking at these data, we can observe that each treatment is approximately normally distributed, but we also see that variation (the spread of the distribution) is different between the three treatments. You could look at this figure and intuit that treatment a is probably different from treatments b and c, but is this really true? Some of the values observed in treatment b are also observed in treatment a. This is even more apparent comparing the distributions of treatment b and c. Ultimately we would use a statistical test to determine if there are statistically significant differences between treatments, but describing data allows us to determine whether the parametric tests we would normally use are actually appropriate for our data. Raw data must meet or approximately meet the following assumptions for parametric tests:
+
+1. Data are normally distributed (or sample size is large enough to invoke the central limit theorem)
+2. Variances are approximately equal in each treatment group
+3. Data are independent
+4. There are no extreme outliers
+
+The following exercise demonstrates how to test assumptions and visualize data.
+
+### Why plot raw data:
+
+```{r Why plot raw data}
+# Data are from Pollard et al 2019
+# There is one categorical explanatory variable (Genotype) and one continuous response variable (Measurement)
+data2 <- read.csv("dataset2.csv", header = TRUE)
+head(data2)
+
+# make genotype column a categorical variable which are called factors in R
+data2$Genotype <- as.factor(data2$Genotype) 
+# check that data structure is correct
+str(data2)
+# look at summary information summary(data2)
+summary(data2)
+
+# Plot distributions:
+ggplot(data2, aes(Measurement, color = Genotype, fill = Genotype)) +
+  geom_histogram(aes(y = ..density..),binwidth = 1, position = position_dodge()) +
+  geom_density(alpha = 0.3) +
+  theme_classic() +
+  theme(legend.position = c(0.9,0.9))
+```
+
+The above plots have the frequency histogram of the raw data as well as the smoothed density curve overplotted. This density curve helps illustrate that there is some skew to the data. Remember that the normal distribution has a symmetrical unimodal bell shaped curve and this shape determines the empirical rule and the parameters for hypothesis testing. If our raw data don't satisfy or approximately satisfy the normality assumption, any statistical result we calculate using a t test (which relies on the parameters defined by the empirical rule) will be incorrect. Below, we test the normality assumption.
+
+
+### Normality Assumption:
+```{r Normality}
+# Test for normality with a Shapiro Wilks Test:
+shapiro.test(subset(data2, Genotype == "Mutant")$Measurement)  # not normally distributed
+shapiro.test(subset(data2, Genotype == "WT")$Measurement)      # normally distributed
+
+# Data Transformations:
+data2$lnTransform <- log(data2$Measurement)
+
+# Plot distributions of transformed data:
+ggplot(data2, aes(lnTransform, color = Genotype, fill = Genotype)) +
+  geom_histogram(aes(y = ..density..), position = position_dodge()) +
+  geom_density(alpha = 0.3) +
+  theme_classic() +
+  theme(legend.position = c(0.9,0.9))
+
+# Test for normality with a Shapiro Wilks Test:
+shapiro.test(subset(data2, Genotype == "Mutant")$lnTransform)  # normality is improved
+shapiro.test(subset(data2, Genotype == "WT")$lnTransform)      # normally distributed
+
+```
+
+The plot above looks similar to the original plot except the right skew of the Mutant distribution is reduced. This has the effect of improving deviation from normality for this treatment group, and the WT distribution has improved as well. It's not always possible to "fix" completely deviation from normality. IF sample size is reasonably large, we can fall back on the central limit theorem and observation of the normal distribution of sample means.
+
+### Homogeneity of variance:
+You'll see this referred to as homoscedasticity (equal variance) vs heteroscedasticity (unequal variance) as well.
+
+```{r Homogeneity of variance}
+# Generate summary statistics table for the data:
+summarySE(data2, measurevar = "Measurement", groupvars = "Genotype")
+
+# Are variances equal?
+var(subset(data2, Genotype == "Mutant")$Measurement)  # 53.35271
+var(subset(data2, Genotype == "WT")$Measurement)      # 18.09945
+
+ggplot(data2, aes(Genotype, Measurement, color = Genotype, fill = Genotype)) +
+  geom_boxplot(alpha = 0.3) +
+  theme_classic() +
+  theme(legend.position = c(0.9,0.9))
+```
+
+The boxplot shows the mean, first quantile around the mean (the box), the third quantile (the ends of the lines) and any outliers (points). If the mean line is approximately centered in the box and the quantile boundaries are symmetrical, these are signals of equal variance. If the mean line is off-center and the quantile lines are skewed, this is a signal of skewed data. As we compare one treatment to the other, the variance doesn't look that dissimilar. Better than relying on eyeballing the data or guessing from calculating the variances for each treatment, we can use Levene's Test for homogeneity of variance.
+
+```{r Homogenetity of variance continued}
+# Levenes test for homogeneity of variance:
+leveneTest(Measurement ~ Genotype, data = data2) # F = 3.7, P = 0.06
+
+# Test for homoscedasticity:
+leveneTest(lnTransform ~ Genotype, data = data2) # F = 0.001, P = 0.975
+
+ggplot(data2, aes(Genotype, lnTransform, color = Genotype, fill = Genotype)) +
+  geom_boxplot(alpha = 0.3) +
+  theme_classic() +
+  theme(legend.position = c(0.9,0.9))
+```
+
+Levene's test shows that there is marginal evidence that variances are unequal. If the normality assumption wasn't violated, we may accept that variances of the raw data are equal. However, because we are already transforming the data for normality, we can use Levene's Test on the log transformed data. We find that deviation from the variance assumption is vastly improved following data transformation.
+
+### Confidence Intervals
+It is possible to make inferences about your data without running a statistical test by calculating confidence intervals. Confidence intervals  calculated at 95% define the range of values that have 95% probability of containing the true mean of the statistical population. Whether the 95% CIs of different treatments overlap allows you to infer whether the mean of one treatment has a high likelihood of being observed in the other treatment. If the estimated mean of treatment a falls within the confidence interval of treatment b, we fail to reject the null hypothesis that the treatments have different effects on the response. If the estimated mean of treatment a is outside the confidence interval of treatment b, we reject the null hypothesis and conclude the treatments have a significant effect on the response.
+
+```{r Confidence Intervals}
+# Calculate confidence intervals:
+# The summarySE function provides a table of most descriptive statistics you may be interested in generating. This object is also convenient to plot from in R.
+SummaryTable <- summarySE(data = data2, measurevar = "lnTransform", groupvars = "Genotype")
+SummaryTable
+
+# The following walks you through the calculation by hand:
+# Mutant:
+mutant.n <- length(subset(data2, Genotype =="Mutant")$lnTransform)
+mutant.sd <- sd(subset(data2, Genotype =="Mutant")$lnTransform)
+mutant.se <- mutant.sd/sqrt(mutant.n)
+mutant.df <- mutant.n - 1 # subtract 1 because this is the number of independent data--you can always determine one data point using the rest of the data, so we subtract 1 for this dependent data point.
+
+# WT:
+WT.n <- length(subset(data2, Genotype =="WT")$lnTransform)
+WT.sd <- sd(subset(data2, Genotype =="WT")$lnTransform)
+WT.se <- WT.sd/sqrt(WT.n)
+WT.df <- WT.n - 1 # subtract 1 because this is the number of independent data--you can always determine one data point using the rest of the data, so we subtract 1 for this dependent data point.
+
+alpha <- 0.05 # Accepting a 5% probability of incorrectly rejecting the null hypothesis
+
+# The T statistic comes from a table of probabilities and depends on the type I error rate (alpha), the degrees of freedom in the data set--essentially the sample size.
+mutant.tstatistic <- qt(p = alpha/2, df = mutant.df, lower.tail = FALSE) # 2.034515
+WT.tstatistic <- qt(p = alpha/2, df = WT.df, lower.tail = FALSE) # 2.048407
+
+# determine margin of error and determine the confidence interval:
+mutant.me <- mutant.tstatistic * mutant.se # 0.0518814
+WT.me <- WT.tstatistic * WT.se # 0.05307596
+
+# Plot the confidence intervals:
+ggplot(SummaryTable, aes(Genotype, lnTransform, color = Genotype)) +
+  geom_errorbar(aes(ymin = lnTransform - ci, ymax = lnTransform + ci), width = 0.2) +
+  geom_point() +
+  theme_classic() +
+  theme(legend.position = c(0.9,0.9))
+
+```
+
+The plot above shows the estimated mean (the point) for each treatment and the 95% confidence interval for each treatment. We are 95% confident that the red range of values contains the true mean of the Mutant population and 95% confident that the blue range of values contains the true mean of the WT population. Neither estimated mean falls within the 95% CI of either treatment, so we can conclude that the genotype treatment has an effect on the transformed measured value. This data description DOES NOT provide a statistical probability estimate for our observed differences (a p value), so we still do need to do a statistical test to formally test our hypothesis.
+
+
+
